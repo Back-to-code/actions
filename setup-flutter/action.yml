@@ -1,0 +1,41 @@
+name: Setup Flutter
+description: >
+  Flutter SDK + cached pub dependencies for self-hosted ARC runners.
+  Uses local filesystem cache — no network round-trip to GitHub's cache service.
+
+inputs:
+  flutter-version:
+    description: Flutter version
+    required: false
+    default: stable
+  channel:
+    description: Flutter channel (stable, beta, master)
+    required: false
+    default: stable
+  working-directory:
+    description: Directory containing pubspec.lock
+    required: false
+    default: '.'
+
+runs:
+  using: composite
+  steps:
+    - uses: subosito/flutter-action@v2
+      with:
+        flutter-version: ${{ inputs.flutter-version }}
+        channel: ${{ inputs.channel }}
+        cache: false
+
+    - uses: j3hempsey-actions/local-cache@9071640a145da48dc69fee95edf9f61901c1f54b
+      id: cache
+      with:
+        path: ${{ inputs.working-directory }}/.dart_tool
+        key: flutter-deps-${{ hashFiles(format('{0}/pubspec.lock', inputs.working-directory)) }}
+      env:
+        CACHE_DIR: /home/runner/.cache
+
+    - name: flutter pub get
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: flutter pub get
