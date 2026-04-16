@@ -1,23 +1,23 @@
 # Back-to-code Actions
 
-Reusable composite actions optimized for our self-hosted ARC runners. These actions handle tool installation and dependency caching using **local filesystem cache** — zero network round-trips to GitHub's cloud cache service.
+Reusable composite actions for self-hosted ARC runners. Handle tool install + dep caching via **local filesystem cache** — zero network round-trips to GitHub cloud cache.
 
 ## Why custom actions?
 
-Our CI runs on self-hosted runners (ARC on k3s, dind mode) with:
-- Persistent host-path volumes for tool-cache, npm/composer cache, and local-cache
-- tmpfs working directory (RAM-backed, fast I/O)
+CI runs on self-hosted runners (ARC on k3s, dind mode):
+- Persistent host-path volumes for tool-cache, npm/composer cache, local-cache
+- tmpfs working dir (RAM-backed, fast I/O)
 - Limited network bandwidth
 
-Standard `actions/cache` uploads/downloads to GitHub's cloud. We skip that entirely — dependencies are cached locally on the runner node. This drops install times from minutes to seconds.
+Standard `actions/cache` uploads/downloads to GitHub cloud. We skip entirely — deps cached locally on runner node. Install times: minutes → seconds.
 
-**All workflows must use these actions for dependency setup.** Do not use `actions/cache`, `actions/setup-node` with `cache: 'npm'`, or manual `npm ci`/`composer install` without caching.
+**All workflows must use these actions for dep setup.** Never use `actions/cache`, `actions/setup-node` with `cache: 'npm'`, or manual `npm ci`/`composer install` without caching.
 
 ## Available actions
 
 ### setup-node
 
-Installs Node.js and caches `node_modules` locally.
+Installs Node.js, caches `node_modules` locally.
 
 ```yaml
 - uses: Back-to-code/actions/setup-node@v1
@@ -28,11 +28,11 @@ Installs Node.js and caches `node_modules` locally.
 | `node-version` | `22` | Node.js version |
 | `working-directory` | `.` | Directory with `package-lock.json` |
 
-Skips `npm ci` entirely on cache hit. Cache key based on `package-lock.json` hash.
+Skips `npm ci` on cache hit. Cache key from `package-lock.json` hash.
 
 ### setup-php
 
-Switches PHP version and installs Composer dependencies with local vendor cache.
+Switches PHP version, installs Composer deps with local vendor cache.
 
 ```yaml
 - uses: Back-to-code/actions/setup-php@v1
@@ -46,11 +46,11 @@ Switches PHP version and installs Composer dependencies with local vendor cache.
 | `working-directory` | `.` | Directory with `composer.json` |
 | `composer-flags` | `''` | Extra flags for `composer install` |
 
-PHP versions are pre-installed in the runner image via ondrej/php PPA. The action uses `update-alternatives` to switch — no download needed. Composer runs with `XDEBUG_MODE=off` for speed.
+PHP versions pre-installed via ondrej/php PPA. Action uses `update-alternatives` to switch — no download. Composer runs with `XDEBUG_MODE=off` for speed.
 
 ### setup-go
 
-Installs Go and caches module downloads locally.
+Installs Go, caches module downloads locally.
 
 ```yaml
 - uses: Back-to-code/actions/setup-go@v1
@@ -63,11 +63,11 @@ Installs Go and caches module downloads locally.
 | `go-version` | `1.26` | Go version |
 | `working-directory` | `.` | Directory with `go.sum` |
 
-Disables the built-in `actions/setup-go` cloud cache. Caches `~/go/pkg/mod` locally instead. Go build cache (`~/.cache/go-build`) persists automatically via the runner's host-path volume mount.
+Disables built-in `actions/setup-go` cloud cache. Caches `~/go/pkg/mod` locally. Go build cache (`~/.cache/go-build`) persists via runner host-path volume mount.
 
 ### setup-dart
 
-Installs Dart SDK and caches pub dependencies locally.
+Installs Dart SDK, caches pub deps locally.
 
 ```yaml
 - uses: Back-to-code/actions/setup-dart@v1
@@ -80,7 +80,7 @@ Installs Dart SDK and caches pub dependencies locally.
 
 ### setup-flutter
 
-Installs Flutter SDK and caches pub dependencies locally.
+Installs Flutter SDK, caches pub deps locally.
 
 ```yaml
 - uses: Back-to-code/actions/setup-flutter@v1
@@ -100,13 +100,13 @@ Installs Flutter SDK and caches pub dependencies locally.
 
 ### Rule 1: Always use `runs-on: self-hosted`
 
-All CI jobs run on our self-hosted runners. Never use `ubuntu-latest` or other GitHub-hosted runners for CI checks — they don't have our cached dependencies and tool installations.
+All CI jobs on self-hosted runners. Never `ubuntu-latest` or GitHub-hosted for CI checks — no cached deps/tools.
 
 Exception: deploy workflows may use `ubuntu-latest` for security (ephemeral, no persistent credentials).
 
 ### Rule 2: Set concurrency groups
 
-Every PR workflow **must** cancel in-progress runs when new commits are pushed:
+Every PR workflow **must** cancel in-progress runs on new push:
 
 ```yaml
 concurrency:
@@ -114,7 +114,7 @@ concurrency:
   cancel-in-progress: true
 ```
 
-For deploy workflows, **never** cancel in-progress deployments — queue them:
+Deploy workflows — **never** cancel in-progress, queue instead:
 
 ```yaml
 concurrency:
@@ -124,7 +124,7 @@ concurrency:
 
 ### Rule 3: Set timeout-minutes on every job
 
-Default timeout is 6 hours. A hung job silently burns runner capacity. Set timeouts at ~2x expected duration:
+Default timeout 6 hours. Hung job silently burns runner capacity. Set ~2x expected duration:
 
 ```yaml
 jobs:
@@ -136,7 +136,7 @@ jobs:
 
 ### Rule 4: Use path filtering to skip irrelevant jobs
 
-Use `dorny/paths-filter@v3` at job level to skip work when files haven't changed:
+Use `dorny/paths-filter@v3` at job level to skip when files unchanged:
 
 ```yaml
 jobs:
@@ -164,11 +164,11 @@ jobs:
     # ...
 ```
 
-Do **not** use workflow-level `paths:` triggers — they skip the entire workflow, which breaks required status checks (jobs stay "Pending" forever).
+**Never** workflow-level `paths:` triggers — skips entire workflow → required status checks stay "Pending" forever.
 
 ### Rule 5: Gate job for required checks
 
-Skipped jobs don't satisfy required status checks. Use a gate job instead:
+Skipped jobs don't satisfy required checks. Use gate job:
 
 ```yaml
 jobs:
@@ -185,14 +185,14 @@ jobs:
         run: exit 1
 ```
 
-In GitHub branch protection, mark **only** `CI Passed` as required. This way:
-- Skipped jobs (from path filtering) → gate passes
+In branch protection, mark **only** `CI Passed` as required:
+- Skipped jobs (path filtering) → gate passes
 - Failed jobs → gate fails
 - Cancelled jobs → gate fails
 
 ### Rule 6: Service containers work in dind mode
 
-Our runners support `services:` containers. Docker images are layer-cached on the runner node — repeated pulls are near-instant.
+Runners support `services:` containers. Docker images layer-cached on runner — repeated pulls near-instant.
 
 ```yaml
 jobs:
@@ -214,11 +214,11 @@ jobs:
           --health-start-period=30s
 ```
 
-Use `--health-start-period` for MySQL (takes 10-25s to initialize). Redis and PostgreSQL start faster.
+Use `--health-start-period` for MySQL (10-25s init). Redis/PostgreSQL start faster.
 
 ### Rule 7: Sparse checkout for monorepos
 
-If a job only needs part of the repo, use sparse checkout to speed up checkout:
+Job only needs part of repo → sparse checkout:
 
 ```yaml
 - uses: actions/checkout@v4
@@ -230,14 +230,14 @@ If a job only needs part of the repo, use sparse checkout to speed up checkout:
 
 ### Rule 8: Minimize permissions
 
-Always declare minimum required permissions:
+Always declare minimum required:
 
 ```yaml
 permissions:
   contents: read
 ```
 
-Only add more when needed (e.g., `pull-requests: write` for posting comments).
+Add more only when needed (e.g., `pull-requests: write` for posting comments).
 
 ---
 
@@ -541,11 +541,11 @@ jobs:
 |---------|-----|
 | Using `ubuntu-latest` for CI | Use `self-hosted` — cached deps, faster |
 | Missing `concurrency` block | Add with `cancel-in-progress: true` |
-| No `timeout-minutes` | Set on every job (~2x expected duration) |
+| No `timeout-minutes` | Set on every job (~2x expected) |
 | Using `actions/cache` | Use our setup actions (local cache) |
 | Using `npm install` | Use `npm ci` (faster, deterministic) |
 | Workflow-level `paths:` filter | Use `dorny/paths-filter` at job level |
-| All jobs as required checks | Use gate job pattern (only `CI Passed` required) |
+| All jobs as required checks | Gate job pattern (only `CI Passed` required) |
 | Missing health check on MySQL | Add `--health-start-period=30s` |
 | Running `composer update` in CI | Use `composer install` (reads lockfile) |
 | Default 90-day artifact retention | Set `retention-days: 3` or lower |
@@ -562,7 +562,7 @@ Host node (/opt/runner-cache/)
 ```
 
 Two-layer caching:
-1. **Download cache** (npm/composer dirs) — speeds up install even on cold `node_modules`/`vendor`
+1. **Download cache** (npm/composer dirs) — speeds install even on cold `node_modules`/`vendor`
 2. **Artifact cache** (local-cache tars) — skips install entirely on lockfile match
 
 Both persist across ephemeral runner pods via host-path volumes.
