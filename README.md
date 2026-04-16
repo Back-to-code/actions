@@ -190,6 +190,13 @@ In branch protection, mark **only** `CI Passed` as required:
 - Failed jobs → gate fails
 - Cancelled jobs → gate fails
 
+**Keep all CI jobs in one workflow file.** Gate jobs only work within a single workflow — `needs:` can't cross workflow boundaries. If you split into separate workflow files per job:
+- No way to create a single gate that watches all jobs
+- Workflow-level `paths:` filters cause skipped workflows → required checks stay "Pending" forever
+- Multiple gate jobs = more required checks to maintain
+
+Use job-level path filtering (`dorny/paths-filter`) inside one workflow + one gate job. Only split workflows for genuinely different triggers (PR checks vs deploy vs scheduled).
+
 ### Rule 6: Service containers work in dind mode
 
 Runners support `services:` containers. Docker images layer-cached on runner — repeated pulls near-instant.
