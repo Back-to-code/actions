@@ -1,10 +1,10 @@
 # Back-to-code Actions
 
-Reusable composite actions for self-hosted ARC runners. Handle tool install + dep caching via **local filesystem cache** — zero network round-trips to GitHub cloud cache.
+Reusable composite actions for self-hosted ARC runners. Tool install + dep caching via **local filesystem cache** — zero network round-trips to GitHub cloud cache.
 
 ## Why custom actions?
 
-CI runs on self-hosted runners (ARC on k3s, dind mode):
+CI on self-hosted runners (ARC on k3s, dind mode):
 - Persistent host-path volumes for tool-cache, npm/composer cache, local-cache
 - tmpfs working dir (RAM-backed, fast I/O)
 - Limited network bandwidth
@@ -32,7 +32,7 @@ Skips `npm ci` on cache hit. Cache key from `package-lock.json` hash.
 
 ### setup-php
 
-Switches PHP version, installs Composer deps with local vendor cache.
+Switches PHP version, installs Composer deps w/ local vendor cache.
 
 ```yaml
 - uses: Back-to-code/actions/setup-php@v1
@@ -46,7 +46,7 @@ Switches PHP version, installs Composer deps with local vendor cache.
 | `working-directory` | `.` | Directory with `composer.json` |
 | `composer-flags` | `''` | Extra flags for `composer install` |
 
-PHP versions pre-installed via ondrej/php PPA. Action uses `update-alternatives` to switch — no download. Composer runs with `XDEBUG_MODE=off` for speed.
+PHP versions pre-installed via ondrej/php PPA. Action uses `update-alternatives` to switch — no download. Composer runs w/ `XDEBUG_MODE=off` for speed.
 
 ### setup-go
 
@@ -185,17 +185,17 @@ jobs:
         run: exit 1
 ```
 
-In branch protection, mark **only** `CI Passed` as required:
+Branch protection: mark **only** `CI Passed` as required:
 - Skipped jobs (path filtering) → gate passes
 - Failed jobs → gate fails
 - Cancelled jobs → gate fails
 
-**Keep all CI jobs in one workflow file.** Gate jobs only work within a single workflow — `needs:` can't cross workflow boundaries. If you split into separate workflow files per job:
-- No way to create a single gate that watches all jobs
-- Workflow-level `paths:` filters cause skipped workflows → required checks stay "Pending" forever
+**Keep all CI jobs in one workflow file.** Gate jobs only work within single workflow — `needs:` can't cross workflow boundaries. Split into separate files:
+- No single gate watching all jobs
+- Workflow-level `paths:` filters → skipped workflows → required checks "Pending" forever
 - Multiple gate jobs = more required checks to maintain
 
-Use job-level path filtering (`dorny/paths-filter`) inside one workflow + one gate job. Only split workflows for genuinely different triggers (PR checks vs deploy vs scheduled).
+Use job-level path filtering (`dorny/paths-filter`) inside one workflow + one gate job. Only split for genuinely different triggers (PR checks vs deploy vs scheduled).
 
 ### Rule 6: Service containers work in dind mode
 
@@ -546,15 +546,15 @@ jobs:
 
 | Mistake | Fix |
 |---------|-----|
-| Using `ubuntu-latest` for CI | Use `self-hosted` — cached deps, faster |
-| Missing `concurrency` block | Add with `cancel-in-progress: true` |
+| `ubuntu-latest` for CI | `self-hosted` — cached deps, faster |
+| Missing `concurrency` block | Add w/ `cancel-in-progress: true` |
 | No `timeout-minutes` | Set on every job (~2x expected) |
-| Using `actions/cache` | Use our setup actions (local cache) |
-| Using `npm install` | Use `npm ci` (faster, deterministic) |
-| Workflow-level `paths:` filter | Use `dorny/paths-filter` at job level |
+| `actions/cache` | Use our setup actions (local cache) |
+| `npm install` | `npm ci` (faster, deterministic) |
+| Workflow-level `paths:` filter | `dorny/paths-filter` at job level |
 | All jobs as required checks | Gate job pattern (only `CI Passed` required) |
 | Missing health check on MySQL | Add `--health-start-period=30s` |
-| Running `composer update` in CI | Use `composer install` (reads lockfile) |
+| `composer update` in CI | `composer install` (reads lockfile) |
 | Default 90-day artifact retention | Set `retention-days: 3` or lower |
 
 ## Cache architecture
