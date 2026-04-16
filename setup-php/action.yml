@@ -44,5 +44,4 @@ runs:
           --prefer-dist \
           --no-interaction \
           --no-progress \
-          --no-audit \
           ${{ inputs.composer-flags }}
