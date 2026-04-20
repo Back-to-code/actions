@@ -1,9 +1,10 @@
 name: Setup PHP
 description: >
-  PHP + Composer + cached vendor for self-hosted ARC runners.
+  PHP + Composer for self-hosted ARC runners.
   Switches PHP version via update-alternatives (versions pre-installed in runner image).
   Falls back to installing from ondrej/php PPA if the requested version is missing.
-  Uses local filesystem cache — no network round-trip to GitHub's cache service.
+  Relies on host-mounted ~/.composer/cache download cache (provisioned by btc-runway).
+  Runs composer install on every invocation — fast on warm download cache.
 
 inputs:
   php-version:
@@ -41,16 +42,7 @@ runs:
 
         sudo update-alternatives --set php "/usr/bin/php${PHP_VERSION}"
 
-    - uses: j3hempsey-actions/local-cache@9071640a145da48dc69fee95edf9f61901c1f54b
-      id: cache
-      with:
-        path: ${{ inputs.working-directory }}/vendor
-        key: composer-vendor-${{ hashFiles(format('{0}/composer.lock', inputs.working-directory)) }}
-      env:
-        CACHE_DIR: /home/runner/.cache
-
     - name: composer install
-      if: steps.cache.outputs.cache-hit != 'true'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:

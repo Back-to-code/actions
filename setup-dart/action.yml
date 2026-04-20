@@ -1,7 +1,8 @@
 name: Setup Dart
 description: >
-  Dart SDK + cached pub dependencies for self-hosted ARC runners.
-  Uses local filesystem cache — no network round-trip to GitHub's cache service.
+  Dart SDK + pub deps for self-hosted ARC runners.
+  Relies on host-mounted ~/.pub-cache download cache (provisioned by btc-runway).
+  Runs dart pub get on every invocation — fast on warm download cache.
 
 inputs:
   sdk:
@@ -20,16 +21,7 @@ runs:
       with:
         sdk: ${{ inputs.sdk }}
 
-    - uses: j3hempsey-actions/local-cache@9071640a145da48dc69fee95edf9f61901c1f54b
-      id: cache
-      with:
-        path: ${{ inputs.working-directory }}/.dart_tool
-        key: dart-deps-${{ hashFiles(format('{0}/pubspec.lock', inputs.working-directory)) }}
-      env:
-        CACHE_DIR: /home/runner/.cache
-
     - name: dart pub get
-      if: steps.cache.outputs.cache-hit != 'true'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       run: dart pub get

@@ -1,23 +1,32 @@
 # Back-to-code Actions
 
-Reusable composite actions for self-hosted ARC runners. Tool install + dep caching via **local filesystem cache** — zero network round-trips to GitHub cloud cache.
+Reusable composite actions for self-hosted ARC runners. Tool install + dep setup that leans on **host-mounted download caches** — zero network round-trips to GitHub cloud cache.
 
 ## Why custom actions?
 
 CI on self-hosted runners (ARC on k3s, dind mode):
-- Persistent host-path volumes for tool-cache, npm/composer cache, local-cache
+- Persistent host-path volumes for tool-cache, npm, composer, general `.cache`
 - tmpfs working dir (RAM-backed, fast I/O)
 - Limited network bandwidth
 
-Standard `actions/cache` uploads/downloads to GitHub cloud. We skip entirely — deps cached locally on runner node. Install times: minutes → seconds.
+Standard `actions/cache` uploads/downloads to GitHub cloud. We skip entirely — package-manager download caches live on the runner node and persist across ephemeral pods. Install times: minutes → seconds.
 
-**All workflows must use these actions for dep setup.** Never use `actions/cache`, `actions/setup-node` with `cache: 'npm'`, or manual `npm ci`/`composer install` without caching.
+## Caching philosophy — download cache, not artifacts
+
+These actions **cache downloads, not build artifacts**. Every job runs a fresh `npm ci` / `composer install` / `pub get`, populated from the warm download cache on the host volume. We do **not** tar `node_modules` / `vendor` / `.dart_tool` and skip install on cache hit.
+
+Rationale (learned the hard way):
+- Postinstall scripts run every job → broken postinstalls surface on the PR that introduces them, not N PRs later when the cache finally misses.
+- npm workspaces nesting, transitive version conflicts, and similar lockfile quirks can't produce a partial cached tree — there's nothing to go stale.
+- A fresh `npm ci` against a warm `~/.npm` is fast (seconds). The tar-restore savings weren't worth the fragility.
+
+**All workflows must use these actions for dep setup.** Never use `actions/cache`, `actions/setup-node` with `cache: 'npm'`, or manual `npm ci`/`composer install`/`pub get` — go through the composite actions so env + cache paths stay consistent.
 
 ## Available actions
 
 ### setup-node
 
-Installs Node.js, caches `node_modules` locally.
+Installs Node.js, runs `npm ci` against the host-mounted `~/.npm` download cache.
 
 ```yaml
 - uses: Back-to-code/actions/setup-node@v1
@@ -28,11 +37,11 @@ Installs Node.js, caches `node_modules` locally.
 | `node-version` | `22` | Node.js version |
 | `working-directory` | `.` | Directory with `package-lock.json` |
 
-Skips `npm ci` on cache hit. Cache key from `package-lock.json` hash.
+`npm ci` runs every invocation. Fast on warm `~/.npm`.
 
 ### setup-php
 
-Switches PHP version, installs Composer deps w/ local vendor cache.
+Switches PHP version, runs `composer install` against the host-mounted `~/.composer/cache` download cache.
 
 ```yaml
 - uses: Back-to-code/actions/setup-php@v1
@@ -46,7 +55,7 @@ Switches PHP version, installs Composer deps w/ local vendor cache.
 | `working-directory` | `.` | Directory with `composer.json` |
 | `composer-flags` | `''` | Extra flags for `composer install` |
 
-PHP versions pre-installed via ondrej/php PPA. Action uses `update-alternatives` to switch — no download. Composer runs w/ `XDEBUG_MODE=off` for speed.
+PHP versions pre-installed via ondrej/php PPA. Action uses `update-alternatives` to switch — no download. Composer runs w/ `XDEBUG_MODE=off` for speed. `composer install` runs every invocation.
 
 ### setup-go
 
@@ -63,11 +72,11 @@ Installs Go, caches module downloads locally.
 | `go-version` | `1.26` | Go version |
 | `working-directory` | `.` | Directory with `go.sum` |
 
-Disables built-in `actions/setup-go` cloud cache. Caches `~/go/pkg/mod` locally. Go build cache (`~/.cache/go-build`) persists via runner host-path volume mount.
+Disables built-in `actions/setup-go` cloud cache. Caches `~/go/pkg/mod` via `local-cache` (download cache of immutable module tarballs — safe to tar). Go build cache (`~/.cache/go-build`) persists via runner host-path volume mount. `go mod download` runs on miss.
 
 ### setup-dart
 
-Installs Dart SDK, caches pub deps locally.
+Installs Dart SDK, runs `dart pub get` against the host-mounted `~/.pub-cache` download cache.
 
 ```yaml
 - uses: Back-to-code/actions/setup-dart@v1
@@ -78,9 +87,11 @@ Installs Dart SDK, caches pub deps locally.
 | `sdk` | `stable` | Dart SDK version |
 | `working-directory` | `.` | Directory with `pubspec.lock` |
 
+`dart pub get` runs every invocation.
+
 ### setup-flutter
 
-Installs Flutter SDK, caches pub deps locally.
+Installs Flutter SDK, runs `flutter pub get` against the host-mounted `~/.pub-cache` download cache.
 
 ```yaml
 - uses: Back-to-code/actions/setup-flutter@v1
@@ -93,6 +104,8 @@ Installs Flutter SDK, caches pub deps locally.
 | `flutter-version` | `stable` | Flutter version |
 | `channel` | `stable` | Channel (stable, beta, master) |
 | `working-directory` | `.` | Directory with `pubspec.lock` |
+
+`flutter pub get` runs every invocation.
 
 ---
 
@@ -563,13 +576,20 @@ jobs:
 Host node (/opt/runner-cache/)
 ├── tool-cache/        → /opt/hostedtoolcache   (Node, Go, Dart, Flutter binaries)
 ├── npm/               → ~/.npm                  (npm download cache)
-├── composer/           → ~/.composer/cache       (Composer download cache)
-├── local-cache/        → ~/.cache               (node_modules, vendor, go modules — tar archives)
-└── docker/             → /var/lib/docker         (Docker layer cache for service containers)
+├── composer/          → ~/.composer/cache       (Composer download cache)
+├── pub-cache/         → ~/.pub-cache            (Dart/Flutter pub download cache)
+├── local-cache/       → ~/.cache                (general download caches — go-build, puppeteer, etc.)
+└── docker/            → /var/lib/docker         (Docker layer cache for service containers)
 ```
 
-Two-layer caching:
-1. **Download cache** (npm/composer dirs) — speeds install even on cold `node_modules`/`vendor`
-2. **Artifact cache** (local-cache tars) — skips install entirely on lockfile match
+Single-layer strategy: package-manager **download caches** live on host volumes. Every job installs fresh against a warm download cache.
 
-Both persist across ephemeral runner pods via host-path volumes.
+| Tool | Cache path | Mounted via |
+|------|-----------|-------------|
+| npm | `~/.npm` | dedicated `npm` volume |
+| composer | `~/.composer/cache` | dedicated `composer` volume |
+| dart / flutter | `~/.pub-cache` | dedicated `pub-cache` volume |
+| go | `~/go/pkg/mod` | via `local-cache` action (download cache — immutable hashed tarballs) |
+| puppeteer | `~/.cache/puppeteer` | `.cache` volume (usually unused — set `PUPPETEER_EXECUTABLE_PATH` to system chrome) |
+
+All persist across ephemeral runner pods via host-path volumes. Artifact directories (`node_modules`, `vendor`, `.dart_tool`) are never cached — they're reconstructed every job.
