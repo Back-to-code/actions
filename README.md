@@ -76,7 +76,7 @@ Disables built-in `actions/setup-go` cloud cache. Caches `~/go/pkg/mod` via `loc
 
 ### setup-dart
 
-Installs Dart SDK, runs `dart pub get` against a pub cache at `~/.cache/pub-cache` (piggybacks on the host-mounted `~/.cache` volume).
+Installs Dart SDK, runs `dart pub get` against the host-mounted `~/.pub-cache` download cache.
 
 ```yaml
 - uses: Back-to-code/actions/setup-dart@v1
@@ -87,11 +87,11 @@ Installs Dart SDK, runs `dart pub get` against a pub cache at `~/.cache/pub-cach
 | `sdk` | `stable` | Dart SDK version |
 | `working-directory` | `.` | Directory with `pubspec.lock` |
 
-Sets `PUB_CACHE=/home/runner/.cache/pub-cache` and exports it to the job env for subsequent steps. `dart pub get` runs every invocation.
+`dart pub get` runs every invocation.
 
 ### setup-flutter
 
-Installs Flutter SDK, runs `flutter pub get` against a pub cache at `~/.cache/pub-cache`.
+Installs Flutter SDK, runs `flutter pub get` against the host-mounted `~/.pub-cache` download cache.
 
 ```yaml
 - uses: Back-to-code/actions/setup-flutter@v1
@@ -105,7 +105,7 @@ Installs Flutter SDK, runs `flutter pub get` against a pub cache at `~/.cache/pu
 | `channel` | `stable` | Channel (stable, beta, master) |
 | `working-directory` | `.` | Directory with `pubspec.lock` |
 
-Sets `PUB_CACHE=/home/runner/.cache/pub-cache` and exports it. `flutter pub get` runs every invocation.
+`flutter pub get` runs every invocation.
 
 ---
 
@@ -577,7 +577,8 @@ Host node (/opt/runner-cache/)
 ├── tool-cache/        → /opt/hostedtoolcache   (Node, Go, Dart, Flutter binaries)
 ├── npm/               → ~/.npm                  (npm download cache)
 ├── composer/          → ~/.composer/cache       (Composer download cache)
-├── local-cache/       → ~/.cache                (general download caches — pub, go-build, puppeteer, etc.)
+├── pub-cache/         → ~/.pub-cache            (Dart/Flutter pub download cache)
+├── local-cache/       → ~/.cache                (general download caches — go-build, puppeteer, etc.)
 └── docker/            → /var/lib/docker         (Docker layer cache for service containers)
 ```
 
@@ -587,8 +588,8 @@ Single-layer strategy: package-manager **download caches** live on host volumes.
 |------|-----------|-------------|
 | npm | `~/.npm` | dedicated `npm` volume |
 | composer | `~/.composer/cache` | dedicated `composer` volume |
+| dart / flutter | `~/.pub-cache` | dedicated `pub-cache` volume |
 | go | `~/go/pkg/mod` | via `local-cache` action (download cache — immutable hashed tarballs) |
-| dart / flutter | `~/.cache/pub-cache` | redirected via `PUB_CACHE`, piggybacks on `.cache` volume |
 | puppeteer | `~/.cache/puppeteer` | `.cache` volume (usually unused — set `PUPPETEER_EXECUTABLE_PATH` to system chrome) |
 
 All persist across ephemeral runner pods via host-path volumes. Artifact directories (`node_modules`, `vendor`, `.dart_tool`) are never cached — they're reconstructed every job.

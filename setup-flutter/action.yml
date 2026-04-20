@@ -1,8 +1,7 @@
 name: Setup Flutter
 description: >
   Flutter SDK + pub deps for self-hosted ARC runners.
-  Redirects PUB_CACHE to /home/runner/.cache/pub-cache so it lives in the
-  host-mounted ~/.cache volume (provisioned by btc-runway).
+  Relies on host-mounted ~/.pub-cache download cache (provisioned by btc-runway).
   Runs flutter pub get on every invocation — fast on warm download cache.
 
 inputs:
@@ -31,9 +30,4 @@ runs:
     - name: flutter pub get
       shell: bash
       working-directory: ${{ inputs.working-directory }}
-      env:
-        PUB_CACHE: /home/runner/.cache/pub-cache
-      run: |
-        mkdir -p "$PUB_CACHE"
-        echo "PUB_CACHE=$PUB_CACHE" >> "$GITHUB_ENV"
-        flutter pub get
+      run: flutter pub get
