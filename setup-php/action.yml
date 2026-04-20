@@ -2,11 +2,12 @@ name: Setup PHP
 description: >
   PHP + Composer + cached vendor for self-hosted ARC runners.
   Switches PHP version via update-alternatives (versions pre-installed in runner image).
+  Falls back to installing from ondrej/php PPA if the requested version is missing.
   Uses local filesystem cache — no network round-trip to GitHub's cache service.
 
 inputs:
   php-version:
-    description: PHP version (must be pre-installed in runner image)
+    description: PHP version to use
     required: false
     default: '8.4'
   working-directory:
@@ -23,7 +24,22 @@ runs:
   steps:
     - name: Select PHP ${{ inputs.php-version }}
       shell: bash
-      run: sudo update-alternatives --set php /usr/bin/php${{ inputs.php-version }}
+      run: |
+        PHP_VERSION="${{ inputs.php-version }}"
+
+        if [ ! -f "/usr/bin/php${PHP_VERSION}" ]; then
+          echo "::warning::PHP ${PHP_VERSION} not pre-installed — installing from ondrej/php PPA"
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            "php${PHP_VERSION}-cli" \
+            "php${PHP_VERSION}-curl" \
+            "php${PHP_VERSION}-mbstring" \
+            "php${PHP_VERSION}-mysql" \
+            "php${PHP_VERSION}-xml" \
+            "php${PHP_VERSION}-zip"
+        fi
+
+        sudo update-alternatives --set php "/usr/bin/php${PHP_VERSION}"
 
     - uses: j3hempsey-actions/local-cache@9071640a145da48dc69fee95edf9f61901c1f54b
       id: cache
