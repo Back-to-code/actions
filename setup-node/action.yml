@@ -12,6 +12,13 @@ inputs:
     description: Directory containing package-lock.json
     required: false
     default: '.'
+  workspaces:
+    description: >
+      Also cache nested node_modules from npm workspaces
+      (apps/*, libs/*, packages/*). Enable for monorepos where
+      workspace deps do not hoist to the root node_modules.
+    required: false
+    default: 'false'
 
 runs:
   using: composite
@@ -20,7 +27,9 @@ runs:
       with:
         node-version: ${{ inputs.node-version }}
 
+    # ── Default mode: cache root node_modules only ─────────────────
     - uses: j3hempsey-actions/local-cache@9071640a145da48dc69fee95edf9f61901c1f54b
+      if: inputs.workspaces != 'true'
       id: cache
       with:
         path: ${{ inputs.working-directory }}/node_modules
@@ -29,7 +38,49 @@ runs:
         CACHE_DIR: /home/runner/.cache
 
     - name: npm ci
-      if: steps.cache.outputs.cache-hit != 'true'
+      if: inputs.workspaces != 'true' && steps.cache.outputs.cache-hit != 'true'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       run: npm ci
+
+    # ── Workspace mode: cache root + nested node_modules together ──
+    - name: Restore workspace node_modules
+      if: inputs.workspaces == 'true'
+      id: ws-cache
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        CACHE_DIR: /home/runner/.cache
+        WS_KEY: node-modules-ws-${{ hashFiles(format('{0}/package-lock.json', inputs.working-directory)) }}
+      run: |
+        tar_path="$CACHE_DIR/$WS_KEY.tar.gz"
+        if [ -f "$tar_path" ]; then
+          tar -xzf "$tar_path"
+          echo "cache-hit=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "cache-hit=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: npm ci (workspace)
+      if: inputs.workspaces == 'true' && steps.ws-cache.outputs.cache-hit != 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: npm ci
+
+    - name: Save workspace node_modules
+      if: inputs.workspaces == 'true' && steps.ws-cache.outputs.cache-hit != 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        CACHE_DIR: /home/runner/.cache
+        WS_KEY: node-modules-ws-${{ hashFiles(format('{0}/package-lock.json', inputs.working-directory)) }}
+      run: |
+        mkdir -p "$CACHE_DIR"
+        dirs=(node_modules)
+        for parent in apps libs packages; do
+          [ -d "$parent" ] || continue
+          while IFS= read -r -d '' nm; do
+            dirs+=("$nm")
+          done < <(find "$parent" -mindepth 2 -maxdepth 2 -type d -name node_modules -print0)
+        done
+        tar -czf "$CACHE_DIR/$WS_KEY.tar.gz" "${dirs[@]}"

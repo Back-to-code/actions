@@ -27,8 +27,17 @@ Installs Node.js, caches `node_modules` locally.
 |-------|---------|-------------|
 | `node-version` | `22` | Node.js version |
 | `working-directory` | `.` | Directory with `package-lock.json` |
+| `workspaces` | `false` | Also cache nested `node_modules` from npm workspaces (`apps/*`, `libs/*`, `packages/*`). Enable for monorepos where workspace deps don't hoist to root. |
 
 Skips `npm ci` on cache hit. Cache key from `package-lock.json` hash.
+
+**Monorepos with npm workspaces:** set `workspaces: true`. When a workspace pins a different version than the root (e.g. `mathjs@15` in `apps/calculator` vs. `mathjs@14` at root), npm installs it nested at `apps/calculator/node_modules/mathjs`. The default cache path only covers root — nested dirs vanish on cache restore → `Cannot find package '...'` at build/test time. Workspace mode tars root + `apps/*/node_modules` + `libs/*/node_modules` + `packages/*/node_modules` together.
+
+```yaml
+- uses: Back-to-code/actions/setup-node@v1
+  with:
+    workspaces: true
+```
 
 ### setup-php
 
