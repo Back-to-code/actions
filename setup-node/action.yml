@@ -1,7 +1,9 @@
 name: Setup Node
 description: >
-  Node.js + cached node_modules for self-hosted ARC runners.
-  Uses local filesystem cache — no network round-trip to GitHub's cache service.
+  Node.js + npm for self-hosted ARC runners.
+  Relies on host-mounted ~/.npm download cache (provisioned by btc-runway).
+  Runs npm ci on every invocation — fast on warm download cache, always
+  correct, postinstall scripts run every time.
 
 inputs:
   node-version:
@@ -20,16 +22,7 @@ runs:
       with:
         node-version: ${{ inputs.node-version }}
 
-    - uses: j3hempsey-actions/local-cache@9071640a145da48dc69fee95edf9f61901c1f54b
-      id: cache
-      with:
-        path: ${{ inputs.working-directory }}/node_modules
-        key: node-modules-${{ hashFiles(format('{0}/package-lock.json', inputs.working-directory)) }}
-      env:
-        CACHE_DIR: /home/runner/.cache
-
     - name: npm ci
-      if: steps.cache.outputs.cache-hit != 'true'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       run: npm ci
