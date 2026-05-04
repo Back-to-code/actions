@@ -259,6 +259,36 @@ permissions:
 
 Add more only when needed (e.g., `pull-requests: write` for posting comments).
 
+### Rule 9: SHA-pin third-party actions
+
+Pin **every** `uses:` to a full commit SHA with the version as a trailing comment. Applies to all suppliers, including ally-controlled (`Back-to-code/actions/*`) — moving tags can be re-pointed silently, SHA cannot.
+
+```yaml
+- uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+- uses: Back-to-code/actions/setup-node@<sha> # v1
+- uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+- uses: github/codeql-action/upload-sarif@<sha> # v4
+```
+
+Why:
+- ISO 27001 A.5.21 requires commit-pinning for supply-chain integrity regardless of supplier trust.
+- Tag-pin (`@v4`) re-resolves on each run → upstream tag move (compromise or rewrite) flows in undetected.
+- SHA + version comment keeps Dependabot / human review readable.
+
+Dependabot can manage SHA bumps:
+
+```yaml
+# .github/dependabot.yml
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+```
+
+> The workflow examples below use moving tags (`@v4`, `@v1`) for readability. **Real workflows must SHA-pin** per Rule 9.
+
 ---
 
 ## Complete workflow template
@@ -569,6 +599,7 @@ jobs:
 | Missing health check on MySQL | Add `--health-start-period=30s` |
 | `composer update` in CI | `composer install` (reads lockfile) |
 | Default 90-day artifact retention | Set `retention-days: 3` or lower |
+| Moving-tag pin (`@v4`) | SHA-pin + `# v4` comment (Rule 9) |
 
 ## Cache architecture
 

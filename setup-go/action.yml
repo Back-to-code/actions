@@ -17,12 +17,12 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: actions/setup-go@v5
+    - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
       with:
         go-version: ${{ inputs.go-version }}
         cache: false
 
-    - uses: j3hempsey-actions/local-cache@9071640a145da48dc69fee95edf9f61901c1f54b
+    - uses: j3hempsey-actions/local-cache@9071640a145da48dc69fee95edf9f61901c1f54b # v1.0.5
       id: cache
       with:
         path: ~/go/pkg/mod
