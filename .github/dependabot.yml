@@ -1,7 +1,12 @@
 version: 2
 updates:
   - package-ecosystem: github-actions
-    directory: /
+    directories:
+      - /setup-dart
+      - /setup-flutter
+      - /setup-go
+      - /setup-node
+      - /setup-php
     schedule:
       interval: weekly
       day: monday
