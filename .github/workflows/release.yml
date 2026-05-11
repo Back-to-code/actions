@@ -25,9 +25,8 @@ jobs:
         if: steps.tag.outputs.new_tag
         run: |
           MAJOR=$(echo "${{ steps.tag.outputs.new_version }}" | cut -d. -f1)
-          git tag -f "v${MAJOR}" "${{ steps.tag.outputs.new_tag }}"
+          git tag -f "v${MAJOR}" "$GITHUB_SHA"
           git push origin "v${MAJOR}" --force
-
       - name: GitHub Release
         if: steps.tag.outputs.new_tag
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
