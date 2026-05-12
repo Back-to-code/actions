@@ -37,7 +37,12 @@ Installs Node.js, runs `npm ci` against the host-mounted `~/.npm` download cache
 | `node-version` | `22` | Node.js version |
 | `working-directory` | `.` | Directory with `package-lock.json` |
 
-`npm ci` runs every invocation. Fast on warm `~/.npm`.
+`npm ci` runs every invocation with `--prefer-offline --no-audit --no-fund`:
+- `--prefer-offline` skips registry metadata lookups when the warm `~/.npm` cache satisfies the lockfile.
+- `--no-audit` skips the audit POST to the registry (audit belongs in a dedicated job, not every install).
+- `--no-fund` skips funding output.
+
+Postinstall scripts still run every invocation — the flags only affect network round-trips, not script execution.
 
 ### setup-php
 
