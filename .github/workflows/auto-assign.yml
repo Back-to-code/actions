@@ -1,0 +1,36 @@
+name: Auto-assign reviewers
+
+on:
+  workflow_call:
+    inputs:
+      reviewers:
+        description: Space-separated GitHub usernames to request as reviewers.
+        required: true
+        type: string
+
+permissions:
+  pull-requests: write
+
+jobs:
+  assign:
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: self-hosted
+    timeout-minutes: 5
+    steps:
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          REVIEWERS_IN: ${{ inputs.reviewers }}
+        run: |
+          reviewers=""
+          for u in $REVIEWERS_IN; do
+            if [ "$u" != "$AUTHOR" ]; then
+              reviewers="$reviewers,$u"
+            fi
+          done
+          reviewers="${reviewers#,}"
+          [ -z "$reviewers" ] && exit 0
+          gh pr edit "$PR_URL" --add-reviewer "$reviewers"
