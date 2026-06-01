@@ -9,7 +9,7 @@ inputs:
   node-version:
     description: Node.js version (must match runner image or tool-cache)
     required: false
-    default: '22'
+    default: '22.20.0'
   working-directory:
     description: Directory containing package-lock.json
     required: false
