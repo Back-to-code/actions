@@ -1,0 +1,106 @@
+name: Codeowner gate
+description: >
+  Pass a PR when its author is a code owner, or when a code owner's latest
+  review is an approval — letting code owners self-merge while still requiring
+  an owner approval for everyone else (something native branch rules can't
+  express; their codeowner-review requirement has no author bypass). Publishes a
+  "Codeowner gate" commit status on the PR head SHA. Reads CODEOWNERS from the
+  base ref via the API and never checks out PR code, so a PR cannot edit
+  CODEOWNERS or this action to forge a pass. Drive it from a workflow triggered
+  by pull_request_target + pull_request_review, with statuses: write.
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+      with:
+        script: |
+          const pr = context.payload.pull_request;
+          if (!pr) {
+            core.setFailed('No pull_request in event payload — trigger this from pull_request_target / pull_request_review.');
+            return;
+          }
+          const {owner, repo} = context.repo;
+          const author = pr.user.login;
+          const headSha = pr.head.sha;
+          const baseSha = pr.base.sha;
+
+          // GitHub resolves CODEOWNERS from the first of these that exists. Read
+          // it from the base ref so a PR can't add itself as an owner.
+          const readCodeowners = async () => {
+            for (const path of ['.github/CODEOWNERS', 'CODEOWNERS', 'docs/CODEOWNERS']) {
+              try {
+                const res = await github.rest.repos.getContent({
+                  owner, repo, path, ref: baseSha, mediaType: {format: 'raw'},
+                });
+                return res.data;
+              } catch (err) {
+                if (err.status === 404) continue;
+                throw err;
+              }
+            }
+            return null;
+          };
+
+          const text = await readCodeowners();
+          if (text === null) {
+            core.setFailed('CODEOWNERS not found in .github/, root, or docs/ on the base branch.');
+            return;
+          }
+
+          // Individual owners only (we don't use teams) — collect every @login,
+          // lowercased for case-insensitive comparison, dropping comments and
+          // team handles (@org/team).
+          // Global owner set, not path-scoped — valid while CODEOWNERS is a
+          // single `*` line. If path-specific owner lines are added, require
+          // approval per changed file instead of a flat set.
+          const owners = new Set();
+          for (const line of String(text).split('\n')) {
+            const stripped = line.replace(/#.*/, '').trim();
+            if (!stripped) continue;
+            for (const handle of stripped.match(/@[A-Za-z0-9-]+(?:\/[A-Za-z0-9-]+)?/g) ?? []) {
+              if (!handle.includes('/')) owners.add(handle.slice(1).toLowerCase());
+            }
+          }
+
+          // The gate is a commit status on the PR head SHA, not this job's
+          // check-run — so the pull_request_review run reports against the right
+          // commit and flips the required check green the moment an owner approves.
+          const setStatus = (state, description) =>
+            github.rest.repos.createCommitStatus({
+              owner, repo, sha: headSha, state, context: 'Codeowner gate', description,
+            });
+
+          if (owners.has(author.toLowerCase())) {
+            await setStatus('success', `Author @${author} is a code owner.`);
+            core.info(`Author ${author} is a code owner. Pass.`);
+            return;
+          }
+
+          // Latest decisive review per user (COMMENTED/PENDING don't change a
+          // reviewer's standing), so an approval later overridden by
+          // changes-requested no longer counts.
+          // Approval is sticky across pushes (matches the ruleset's
+          // require_last_push_approval: false) — an owner who approves commit A
+          // still passes after the author pushes commit B. Acceptable for the
+          // internal tier; to tighten, drop approvals older than the head SHA.
+          const reviews = await github.paginate(github.rest.pulls.listReviews, {
+            owner, repo, pull_number: pr.number,
+          });
+          const latest = new Map();
+          for (const review of reviews) {
+            const login = review.user?.login?.toLowerCase();
+            if (login && ['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'].includes(review.state)) {
+              latest.set(login, review.state);
+            }
+          }
+
+          const approver = [...latest].find(([login, state]) => state === 'APPROVED' && owners.has(login));
+          if (approver) {
+            await setStatus('success', `Code owner @${approver[0]} approved.`);
+            core.info(`Code owner ${approver[0]} approved. Pass.`);
+            return;
+          }
+
+          await setStatus('failure', 'Awaiting approval from a code owner.');
+          core.setFailed('Author is not a code owner and no code owner has approved yet.');
