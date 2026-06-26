@@ -112,6 +112,47 @@ Installs Flutter SDK, runs `flutter pub get` against the host-mounted `~/.pub-ca
 
 `flutter pub get` runs every invocation.
 
+### codeowner-gate
+
+Enforces code-owner approval on a PR, publishing a `Codeowner gate` commit
+status on the PR head SHA. Passes when the PR author is a code owner, or when a
+code owner's latest review is an approval — letting owners self-merge while
+requiring an owner approval for everyone else (native branch rules can't express
+the author bypass). Reads CODEOWNERS from the base ref via the API and never
+checks out PR code, so a PR can't edit CODEOWNERS or the gate to forge a pass.
+
+Drive it from its own workflow — the trigger and permissions must live in the
+calling repo:
+
+```yaml
+name: Codeowner Gate
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+  pull_request_review:
+    types: [submitted, dismissed]
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+concurrency:
+  group: codeowner-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  codeowner-gate:
+    name: Evaluate codeowner gate
+    runs-on: self-hosted-kata
+    timeout-minutes: 5
+    steps:
+      - uses: Back-to-code/actions/codeowner-gate@v1
+```
+
+`pull_request_target` (not `pull_request`) so the gate runs the base branch's
+trusted workflow + action with a writable token. No inputs — the status context
+is fixed to `Codeowner gate` to match the org `protect-internal` ruleset's
+required check. Owner matching is global (any `@login` in CODEOWNERS), not
+path-scoped.
+
 ---
 
 ## Writing optimized workflows
