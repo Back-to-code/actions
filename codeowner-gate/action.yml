@@ -102,5 +102,9 @@ runs:
             return;
           }
 
+          // The "Codeowner gate" commit status is the gate, not this job. Keep
+          // the job green on a clean evaluation so a not-yet-approved PR doesn't
+          // also surface a failing check-run — the red status already blocks the
+          // merge. Genuine errors above still core.setFailed.
           await setStatus('failure', 'Awaiting approval from a code owner.');
-          core.setFailed('Author is not a code owner and no code owner has approved yet.');
+          core.notice('Awaiting approval from a code owner — see the "Codeowner gate" status.');
