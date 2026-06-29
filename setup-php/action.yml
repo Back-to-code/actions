@@ -49,7 +49,6 @@ runs:
         XDEBUG_MODE: 'off'
       run: |
         composer install \
-          --prefer-dist \
           --no-interaction \
           --no-progress \
           ${{ inputs.composer-flags }}
