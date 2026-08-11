@@ -1,13 +1,18 @@
 name: Setup Node
 description: >
-  Node.js + npm for self-hosted ARC runners.
-  Relies on host-mounted ~/.npm download cache (provisioned by btc-runway).
-  Runs npm ci on every invocation — fast on warm download cache, always
+  Node.js + npm, on self-hosted ARC runners or GitHub-hosted runners.
+  On ARC: relies on the host-mounted ~/.npm download cache (btc-runway).
+  On GitHub-hosted: restores ~/.npm via actions/cache instead.
+  Runs npm ci on every invocation either way — fast on a warm download cache, always
   correct, postinstall scripts run every time.
 
 inputs:
   node-version:
-    description: Node.js version (must match runner image or tool-cache)
+    description: >
+      Node.js version. On ARC this must match the runner image or tool-cache. On
+      GitHub-hosted runners an exact patch pin (e.g. 22.20.0) that is absent from the image
+      tool-cache costs a download on every job — a major-only value like '22' resolves to the
+      preinstalled build and costs nothing.
     required: false
     default: '22.20.0'
   working-directory:
@@ -18,11 +23,31 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+    # ---------- self-hosted (ARC) ----------
+    # package-manager-cache: false because the host-mounted ~/.npm volume already serves the
+    # downloads; actions/cache would be a slower network round-trip for the same bytes.
+    - if: runner.environment == 'self-hosted'
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
         node-version: ${{ inputs.node-version }}
         package-manager-cache: false
 
+    # ---------- GitHub-hosted ----------
+    # No host-mounted volume here, so ~/.npm comes from actions/cache. Still the DOWNLOAD
+    # cache, not a node_modules tarball — `npm ci` runs every job, so postinstall scripts
+    # always execute and there is no partial tree to go stale.
+    #
+    # Conditions are negated (`!= 'self-hosted'`) rather than `== 'github-hosted'` so an
+    # unrecognised runner.environment still lands on a working setup instead of silently
+    # skipping both branches.
+    - if: runner.environment != 'self-hosted'
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: npm
+        cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+
+    # ---------- both ----------
     - name: npm ci
       shell: bash
       working-directory: ${{ inputs.working-directory }}

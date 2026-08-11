@@ -1,10 +1,11 @@
 name: Setup PHP
 description: >
-  PHP + Composer for self-hosted ARC runners.
-  Switches PHP version via update-alternatives (versions pre-installed in runner image).
-  Falls back to installing from ondrej/php PPA if the requested version is missing.
-  Relies on host-mounted ~/.composer/cache download cache (provisioned by btc-runway).
-  Runs composer install on every invocation — fast on warm download cache.
+  PHP + Composer, on self-hosted ARC runners or GitHub-hosted runners.
+  On ARC: switches PHP version via update-alternatives (versions pre-installed in runner
+  image) and relies on the host-mounted ~/.composer/cache download cache (btc-runway).
+  On GitHub-hosted: installs PHP from shivammathur/setup-php's prebuilt binaries and
+  restores the Composer download cache via actions/cache.
+  Runs composer install on every invocation either way — fast on a warm download cache.
 
 inputs:
   php-version:
@@ -19,11 +20,27 @@ inputs:
     description: Extra flags for composer install
     required: false
     default: ''
+  extensions:
+    description: >
+      GitHub-hosted only. Extensions to install, as shivammathur/setup-php expects them.
+      Ignored on ARC, where the runner image already carries them. Override when your app
+      needs something outside the Laravel-shaped default.
+    required: false
+    default: 'mbstring, xml, ctype, json, bcmath, curl, zip, intl, gd, pdo_mysql, pdo_sqlite, pcntl'
+  coverage:
+    description: >
+      GitHub-hosted only. Coverage driver — none, pcov, or xdebug. Defaults to none because
+      a driver costs ~15s to install and slows every test; set pcov on coverage and mutation
+      jobs. Ignored on ARC, where the image already carries pcov.
+    required: false
+    default: 'none'
 
 runs:
   using: composite
   steps:
+    # ---------- self-hosted (ARC) ----------
     - name: Select PHP ${{ inputs.php-version }}
+      if: runner.environment == 'self-hosted'
       shell: bash
       run: |
         PHP_VERSION="${{ inputs.php-version }}"
@@ -43,6 +60,42 @@ runs:
 
         sudo update-alternatives --set php "/usr/bin/php${PHP_VERSION}"
 
+    # ---------- GitHub-hosted ----------
+    # The ARC branch above cannot work here. The ubuntu-24.04 image ships PHP 8.3.6 and does
+    # NOT configure the ondrej PPA, so `apt-get install php8.4-cli` has no package source and
+    # the fallback fails outright. setup-php's own prebuilt binaries take ~3-5s instead.
+    #
+    # Conditions are negated (`!= 'self-hosted'`) rather than `== 'github-hosted'` so an
+    # unrecognised runner.environment still lands on a working setup instead of silently
+    # skipping both branches and failing later at `composer install`.
+    - name: Setup PHP ${{ inputs.php-version }}
+      if: runner.environment != 'self-hosted'
+      uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+      with:
+        php-version: ${{ inputs.php-version }}
+        extensions: ${{ inputs.extensions }}
+        coverage: ${{ inputs.coverage }}
+        tools: none
+
+    # Caches Composer's DOWNLOAD dir, never vendor/. That is the same thing the host-mounted
+    # volume gives ARC, and it keeps this repo's caching rule intact: `composer install` still
+    # runs every job, so a broken post-autoload-dump surfaces on the PR that introduces it.
+    - name: Resolve Composer cache dir
+      if: runner.environment != 'self-hosted'
+      id: composer-cache-dir
+      shell: bash
+      run: echo "dir=$(composer config --global cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+    - name: Restore Composer download cache
+      if: runner.environment != 'self-hosted'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      continue-on-error: true
+      with:
+        path: ${{ steps.composer-cache-dir.outputs.dir }}
+        key: composer-dl-${{ inputs.php-version }}-${{ hashFiles(format('{0}/composer.lock', inputs.working-directory)) }}
+        restore-keys: composer-dl-${{ inputs.php-version }}-
+
+    # ---------- both ----------
     - name: composer install
       shell: bash
       working-directory: ${{ inputs.working-directory }}
