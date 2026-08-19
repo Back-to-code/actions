@@ -34,8 +34,10 @@ Installs Node.js, runs `npm ci` against the host-mounted `~/.npm` download cache
 
 | Input | Default | Description |
 |-------|---------|-------------|
-| `node-version` | `22` | Node.js version |
+| `node-version` | `22.20.0` | Node.js version |
 | `working-directory` | `.` | Directory with `package-lock.json` |
+
+On a GitHub-hosted fallback runner the download cache comes from `actions/cache` instead of the host volume — see [Runner fallback](#runner-fallback). Note that an exact patch pin absent from that image's tool-cache costs a download on every job; a major-only value like `'22'` resolves to the preinstalled build and costs nothing.
 
 `npm ci` runs every invocation with `--prefer-offline --no-audit --no-fund`:
 - `--prefer-offline` skips registry metadata lookups when the warm `~/.npm` cache satisfies the lockfile.
@@ -59,8 +61,12 @@ Switches PHP version, runs `composer install` against the host-mounted `~/.compo
 | `php-version` | `8.4` | PHP version (must be in runner image) |
 | `working-directory` | `.` | Directory with `composer.json` |
 | `composer-flags` | `''` | Extra flags for `composer install` |
+| `extensions` | Laravel-shaped set | **Hosted only.** Extensions for `shivammathur/setup-php`. Ignored on ARC. |
+| `coverage` | `none` | **Hosted only.** `none`, `pcov`, or `xdebug`. Ignored on ARC. |
 
 PHP versions pre-installed via ondrej/php PPA. Action uses `update-alternatives` to switch — no download. Composer runs w/ `XDEBUG_MODE=off` for speed. `composer install` runs every invocation.
+
+The two hosted-only inputs exist because the ARC image already carries every extension and a coverage driver, so nothing had to declare them. A GitHub-hosted runner does not, and `setup-php` installs only what it is told. Set `coverage: pcov` on coverage and mutation jobs — the default is `none` because a driver costs ~15s to install and slows every test. See [Runner fallback](#runner-fallback).
 
 ### setup-go
 
@@ -155,6 +161,51 @@ path-scoped.
 
 ---
 
+## Runner fallback
+
+`setup-node` and `setup-php` work on GitHub-hosted runners as well as ARC. This is **not** a
+relaxation of [Rule 1](#rule-1-always-use-runs-on-self-hosted) — self-hosted stays the default and
+the recommendation. It exists so a repo can ride out an ARC outage without rewriting its workflow.
+
+Each action branches on `runner.environment`:
+
+| | ARC (`self-hosted`) | GitHub-hosted |
+|---|---|---|
+| PHP | `update-alternatives`, image-provided | `shivammathur/setup-php` prebuilt binaries (~3-5s) |
+| Node | image / tool-cache | image-preinstalled Node |
+| npm downloads | host-mounted `~/.npm` | `actions/cache` on `~/.npm` |
+| Composer downloads | host-mounted `~/.composer/cache` | `actions/cache` on Composer's `cache-files-dir` |
+
+The caching philosophy is identical on both sides — **download cache, never a `node_modules` or
+`vendor` tarball**. `npm ci` and `composer install` still run on every job, so postinstall breakage
+still surfaces on the PR that introduces it.
+
+A repo makes itself flippable by putting the runner in a variable, which needs no merge to change:
+
+```yaml
+runs-on: ${{ vars.CI_RUNNER || 'self-hosted' }}
+```
+
+```bash
+gh variable set CI_RUNNER --body ubuntu-latest   # flip during an outage
+gh variable delete CI_RUNNER                     # back to ARC
+```
+
+### Expect one cold run per flip
+
+No `actions/cache` entry survives a fleet change in either direction, and this is worth knowing
+before someone spends an afternoon on it. The ARC image ships no `zstd`, so `actions/cache` falls
+back to gzip there (`cache.tgz -z`) while GitHub runners use zstd
+(`cache.tzst --use-compress-program zstdmt`). Compression is part of the cache version, so every key
+misses — including bare prefixes with matching entries present.
+
+Measured on kendo's first hosted run: Rector 412s, then 51s once it had saved its own zstd copy. It
+self-heals on the second run. Closing the gap properly means adding `zstd` to the **btc-runway
+runner image** — GitHub's own docs ask for GNU tar and zstd on self-hosted runners for exactly this
+reason.
+
+---
+
 ## Writing optimized workflows
 
 ### Rule 1: Always use `runs-on: self-hosted`
@@ -162,6 +213,8 @@ path-scoped.
 All CI jobs on self-hosted runners. Never `ubuntu-latest` or GitHub-hosted for CI checks — no cached deps/tools.
 
 Exception: deploy workflows may use `ubuntu-latest` for security (ephemeral, no persistent credentials).
+
+Exception: during an ARC outage, see [Runner fallback](#runner-fallback). The setup actions handle both runner types, so the switch is a variable rather than a workflow rewrite.
 
 ### Rule 2: Set concurrency groups
 
