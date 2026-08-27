@@ -62,11 +62,11 @@ Switches PHP version, runs `composer install` against the host-mounted `~/.compo
 | `working-directory` | `.` | Directory with `composer.json` |
 | `composer-flags` | `''` | Extra flags for `composer install` |
 | `extensions` | Laravel-shaped set | **Hosted only.** Extensions for `shivammathur/setup-php`. Ignored on ARC. |
-| `coverage` | `none` | **Hosted only.** `none`, `pcov`, or `xdebug`. Ignored on ARC. |
+| `coverage` | `none` | `none`, `pcov`, or `xdebug`. On ARC, anything but `xdebug` unloads the image's always-on xdebug (segfaults deep recursion; pcov stays available). Hosted installs the named driver. |
 
 PHP versions pre-installed via ondrej/php PPA. Action uses `update-alternatives` to switch — no download. Composer runs w/ `XDEBUG_MODE=off` for speed. `composer install` runs every invocation.
 
-The two hosted-only inputs exist because the ARC image already carries every extension and a coverage driver, so nothing had to declare them. A GitHub-hosted runner does not, and `setup-php` installs only what it is told. Set `coverage: pcov` on coverage and mutation jobs — the default is `none` because a driver costs ~15s to install and slows every test. See [Runner fallback](#runner-fallback).
+The `extensions` input is hosted-only because the ARC image already carries every extension; a GitHub-hosted runner installs only what it is told. `coverage` applies on both runner kinds: declare the driver on coverage and mutation jobs (`xdebug` if the job sets `XDEBUG_MODE=coverage`, `pcov` otherwise) — the default `none` keeps xdebug unloaded on ARC (always-loaded xdebug segfaults deep-recursion workloads like Scramble generation) and skips the ~15s driver install on hosted. See [Runner fallback](#runner-fallback).
 
 ### setup-go
 

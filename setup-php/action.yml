@@ -29,9 +29,11 @@ inputs:
     default: 'mbstring, xml, ctype, json, bcmath, curl, zip, intl, gd, pdo_mysql, pdo_sqlite, pcntl'
   coverage:
     description: >
-      GitHub-hosted only. Coverage driver — none, pcov, or xdebug. Defaults to none because
-      a driver costs ~15s to install and slows every test; set pcov on coverage and mutation
-      jobs. Ignored on ARC, where the image already carries pcov.
+      Coverage driver — none, pcov, or xdebug. Defaults to none because a driver slows every
+      test (and costs ~15s to install on GitHub-hosted); set it on coverage and mutation jobs.
+      On ARC the image bakes pcov + xdebug enabled: anything but 'xdebug' unloads xdebug for
+      the selected PHP version (always-loaded xdebug segfaults deep-recursion workloads —
+      Scramble generation, tc-api TC-0374); pcov stays available regardless.
     required: false
     default: 'none'
 
@@ -59,6 +61,11 @@ runs:
         fi
 
         sudo update-alternatives --set php "/usr/bin/php${PHP_VERSION}"
+
+        if [ "${{ inputs.coverage }}" != "xdebug" ]; then
+          # PPA-fallback installs carry no xdebug — absence is the goal anyway.
+          sudo phpdismod -v "${PHP_VERSION}" -s ALL xdebug || true
+        fi
 
     # ---------- GitHub-hosted ----------
     # The ARC branch above cannot work here. The ubuntu-24.04 image ships PHP 8.3.6 and does
