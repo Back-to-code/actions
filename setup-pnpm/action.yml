@@ -1,0 +1,74 @@
+name: Setup pnpm
+description: >
+  Node + pnpm, on self-hosted ARC runners or GitHub-hosted runners.
+  pnpm comes from corepack — the version is the one pinned in package.json
+  "packageManager". Caches the pnpm content-addressable store: a host-mounted
+  local cache on ARC (no cloud round-trip, same as setup-go), actions/cache on
+  GitHub-hosted. Runs `pnpm install --frozen-lockfile` on every invocation —
+  fast on a warm store, always correct, install scripts run every time.
+
+inputs:
+  node-version:
+    description: >
+      Node.js version. On ARC this must match the runner image tool-cache — a value
+      absent from it costs a download on every job; a major-only value like '22' resolves
+      to the preinstalled build and costs nothing.
+    required: false
+    default: '22.20.0'
+  working-directory:
+    description: Directory containing package.json and pnpm-lock.yaml
+    required: false
+    default: '.'
+
+runs:
+  using: composite
+  steps:
+    # Node runtime only — no npm cache here; the pnpm store is cached below.
+    - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    # corepack ships with Node. `enable` installs the pnpm shim, which resolves
+    # its version from package.json "packageManager" on first use — set that field
+    # (e.g. "pnpm@9.12.0") for a deterministic pnpm version.
+    - name: Enable pnpm
+      shell: bash
+      run: corepack enable
+
+    - name: Resolve pnpm store dir
+      id: store
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: echo "dir=$(pnpm store path)" >> "$GITHUB_OUTPUT"
+
+    # ---------- self-hosted (ARC) ----------
+    # Host-mounted local cache, not actions/cache: the store tarball lives under the
+    # runner's host-path /home/runner/.cache volume, so no GitHub cloud round-trip —
+    # same mechanism setup-go uses for ~/go/pkg/mod.
+    - if: runner.environment == 'self-hosted'
+      uses: j3hempsey-actions/local-cache@9071640a145da48dc69fee95edf9f61901c1f54b # v1.0.5
+      with:
+        path: ${{ steps.store.outputs.dir }}
+        key: pnpm-store-${{ hashFiles(format('{0}/pnpm-lock.yaml', inputs.working-directory)) }}
+      env:
+        CACHE_DIR: /home/runner/.cache
+
+    # ---------- GitHub-hosted ----------
+    # No host-mounted volume here, so the store comes from actions/cache. Still the
+    # STORE (immutable content-addressable packages), not node_modules — `pnpm install`
+    # runs every job, so install scripts always execute and there is no partial tree
+    # to go stale. Conditions are negated (`!= 'self-hosted'`) so an unrecognised
+    # runner.environment still lands on a working setup.
+    - if: runner.environment != 'self-hosted'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      continue-on-error: true
+      with:
+        path: ${{ steps.store.outputs.dir }}
+        key: pnpm-store-${{ hashFiles(format('{0}/pnpm-lock.yaml', inputs.working-directory)) }}
+        restore-keys: pnpm-store-
+
+    # ---------- both ----------
+    - name: pnpm install
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: pnpm install --frozen-lockfile

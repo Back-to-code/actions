@@ -46,6 +46,21 @@ On a GitHub-hosted fallback runner the download cache comes from `actions/cache`
 
 Postinstall scripts still run every invocation — the flags only affect network round-trips, not script execution.
 
+### setup-pnpm
+
+Installs Node.js, enables pnpm via corepack, runs `pnpm install --frozen-lockfile` against a cached pnpm store.
+
+```yaml
+- uses: Back-to-code/actions/setup-pnpm@v2
+```
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `node-version` | `22.20.0` | Node.js version (same ARC tool-cache note as setup-node) |
+| `working-directory` | `.` | Directory with `package.json` + `pnpm-lock.yaml` |
+
+pnpm comes from **corepack** (bundled with Node), so its version is whatever `package.json` `"packageManager"` pins (e.g. `"pnpm@9.12.0"`) — set that field for a deterministic version. The content-addressable store is cached like setup-go's module cache: a host-mounted `local-cache` on ARC (no cloud round-trip), `actions/cache` on a GitHub-hosted fallback. `pnpm install --frozen-lockfile` runs every invocation (the `npm ci` equivalent — fails if the lockfile is out of date), fast on a warm store; install scripts always execute.
+
 ### setup-php
 
 Switches PHP version, runs `composer install` against the host-mounted `~/.composer/cache` download cache.
