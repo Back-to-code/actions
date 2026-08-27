@@ -34,13 +34,16 @@ runs:
       with:
         node-version: ${{ inputs.node-version }}
 
-    # corepack ships with Node. With no pnpm-version, `enable` installs the pnpm
-    # shim and the version resolves from package.json "packageManager" on first use.
+    # corepack ships with Node <25 only (dropped in 25.0.0) — install it from npm
+    # when absent, pinned to match the repo's SHA-pinned supply-chain posture. With
+    # no pnpm-version, `enable` installs the pnpm shim and the version resolves from
+    # package.json "packageManager" on first use.
     - name: Enable pnpm
       shell: bash
       env:
         PNPM_VERSION: ${{ inputs.pnpm-version }}
       run: |
+        command -v corepack >/dev/null || npm install -g corepack@0.35.0
         corepack enable
         if [ -n "$PNPM_VERSION" ]; then
           corepack prepare "pnpm@$PNPM_VERSION" --activate
