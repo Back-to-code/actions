@@ -56,7 +56,7 @@ Installs Node.js, enables pnpm via corepack, runs `pnpm install --frozen-lockfil
 
 | Input | Default | Description |
 |-------|---------|-------------|
-| `node-version` | `22.20.0` | Node.js version (same ARC tool-cache note as setup-node) |
+| `node-version` | `24.16.0` | Node.js version (same ARC tool-cache note as setup-node) |
 | `working-directory` | `.` | Directory with `package.json` + `pnpm-lock.yaml` |
 
 pnpm comes from **corepack** (bundled with Node), so its version is whatever `package.json` `"packageManager"` pins (e.g. `"pnpm@9.12.0"`) — set that field for a deterministic version. The content-addressable store is cached like setup-go's module cache: a host-mounted `local-cache` on ARC (no cloud round-trip), `actions/cache` on a GitHub-hosted fallback. `pnpm install --frozen-lockfile` runs every invocation (the `npm ci` equivalent — fails if the lockfile is out of date), fast on a warm store; install scripts always execute.

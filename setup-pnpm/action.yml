@@ -11,10 +11,10 @@ inputs:
   node-version:
     description: >
       Node.js version. On ARC this must match the runner image tool-cache — a value
-      absent from it costs a download on every job; a major-only value like '22' resolves
+      absent from it costs a download on every job; a major-only value like '24' resolves
       to the preinstalled build and costs nothing.
     required: false
-    default: '22.20.0'
+    default: '24.16.0'
   working-directory:
     description: Directory containing package.json and pnpm-lock.yaml
     required: false
