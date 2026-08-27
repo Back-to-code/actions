@@ -57,10 +57,10 @@ Installs Node.js, enables pnpm via corepack, runs `pnpm install --frozen-lockfil
 | Input | Default | Description |
 |-------|---------|-------------|
 | `node-version` | `24.16.0` | Node.js version (same ARC tool-cache note as setup-node) |
-| `pnpm-version` | `''` | pnpm version. Empty → from `package.json` `"packageManager"` via corepack; set explicitly for a repo without that field |
+| `pnpm-version` | `''` | pnpm version, for repos without a `package.json` `"packageManager"` field. Ignored when that field is present — the project pin always wins |
 | `working-directory` | `.` | Directory with `package.json` + `pnpm-lock.yaml` |
 
-pnpm comes from **corepack** (bundled with Node), so its version is whatever `package.json` `"packageManager"` pins (e.g. `"pnpm@9.12.0"`) unless `pnpm-version` overrides it. The content-addressable store is a **host-mounted volume on ARC** (btc-runway `pnpm-store`, at pnpm's default path) — no cache action, exactly like `npm-cache` for setup-node: downloaded once, warm across ephemeral pods. On a GitHub-hosted fallback the store comes from `actions/cache` instead. `pnpm install --frozen-lockfile --prefer-offline` runs every invocation (the `npm ci --prefer-offline` equivalent — fails if the lockfile is out of date), fast on a warm store; install scripts always execute.
+pnpm comes from **corepack** (bundled with Node <25; installed from npm on 25+), so its version is whatever `package.json` `"packageManager"` pins (e.g. `"pnpm@9.12.0"`); `pnpm-version` is the fallback for repos without that field — a project pin always wins over it. The content-addressable store is a **host-mounted volume on ARC** (btc-runway `pnpm-store`, at pnpm's default path) — no cache action, exactly like `npm-cache` for setup-node: downloaded once, warm across ephemeral pods. On a GitHub-hosted fallback the store comes from `actions/cache` instead. `pnpm install --frozen-lockfile --prefer-offline` runs every invocation (the `npm ci --prefer-offline` equivalent — fails if the lockfile is out of date), fast on a warm store; install scripts always execute.
 
 ### setup-php
 

@@ -18,8 +18,8 @@ inputs:
     default: '24.16.0'
   pnpm-version:
     description: >
-      pnpm version. Empty (default) takes it from package.json "packageManager" via
-      corepack; set an explicit version (e.g. 9.12.0) for a repo without that field.
+      pnpm version, for a repo without a package.json "packageManager" field. Ignored
+      when that field is present — corepack always resolves the project pin.
     required: false
     default: ''
   working-directory:
