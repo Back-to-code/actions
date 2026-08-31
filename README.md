@@ -46,6 +46,22 @@ On a GitHub-hosted fallback runner the download cache comes from `actions/cache`
 
 Postinstall scripts still run every invocation — the flags only affect network round-trips, not script execution.
 
+### setup-pnpm
+
+Installs Node.js, enables pnpm via corepack, runs `pnpm install --frozen-lockfile --prefer-offline` against the host-mounted pnpm store.
+
+```yaml
+- uses: Back-to-code/actions/setup-pnpm@v2
+```
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `node-version` | `24.16.0` | Node.js version (same ARC tool-cache note as setup-node) |
+| `pnpm-version` | `''` | pnpm version, for repos without a `package.json` `"packageManager"` field. Ignored when that field is present — the project pin always wins |
+| `working-directory` | `.` | Directory with `package.json` + `pnpm-lock.yaml` |
+
+pnpm comes from **corepack** (bundled with Node <25; installed from npm on 25+), so its version is whatever `package.json` `"packageManager"` pins (e.g. `"pnpm@9.12.0"`); `pnpm-version` is the fallback for repos without that field — a project pin always wins over it. The content-addressable store is a **host-mounted volume on ARC** (btc-runway `pnpm-store`, at pnpm's default path) — no cache action, exactly like `npm-cache` for setup-node: downloaded once, warm across ephemeral pods. On a GitHub-hosted fallback the store comes from `actions/cache` instead. `pnpm install --frozen-lockfile --prefer-offline` runs every invocation (the `npm ci --prefer-offline` equivalent — fails if the lockfile is out of date), fast on a warm store; install scripts always execute.
+
 ### setup-php
 
 Switches PHP version, runs `composer install` against the host-mounted `~/.composer/cache` download cache.
