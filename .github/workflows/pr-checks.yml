@@ -1,0 +1,28 @@
+name: PR Checks
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-checks-${{ github.head_ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The `on`/`on-gitflow` rulesets require a check named exactly `CI Passed`.
+  # This repo has nothing to run yet, so the gate passes on its own.
+  #
+  # When you add real jobs, list them in `needs:` and add `if: always()` — a job
+  # that is skipped never reports, and a required check that never reports blocks
+  # the pull request forever. Keep the job here rather than in a reusable
+  # workflow: a called job reports as `<caller-job-id> / CI Passed`, which does
+  # not match the required context.
+  ci-passed:
+    name: CI Passed
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - run: echo 'No checks configured for this repository.'
