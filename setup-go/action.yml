@@ -33,11 +33,15 @@ runs:
       with:
         path: ~/go/pkg/mod
         key: go-mod-${{ hashFiles(format('{0}/go.sum', inputs.working-directory)) }}
+        # A truncated archive on the shared cache volume degrades to a re-download
+        # instead of a red Gate; local-cache removes the bad file on the way.
+        skip-failure: true
       env:
         CACHE_DIR: /home/runner/.cache
 
+    # Always: a tolerated restore reports a hit with an empty module dir, and
+    # on a real hit this is a no-op.
     - name: go mod download
-      if: steps.cache.outputs.cache-hit != 'true'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       run: go mod download
