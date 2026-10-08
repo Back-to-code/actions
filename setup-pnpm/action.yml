@@ -3,8 +3,8 @@ description: >
   Node + pnpm, on self-hosted ARC runners or GitHub-hosted runners.
   pnpm comes from corepack (version from package.json "packageManager", or the
   pnpm-version input). On ARC the content-addressable store is a host-mounted
-  volume (btc-runway pnpm-store, at pnpm's default path) — no cache action, the
-  same arrangement setup-node has with ~/.npm; on GitHub-hosted it comes from
+  volume (btc-runway pnpm-store) that the action sets as store-dir explicitly — no
+  cache action, the same arrangement setup-node has with ~/.npm; on GitHub-hosted it comes from
   actions/cache. Runs `pnpm install --frozen-lockfile --prefer-offline` on every
   invocation — fast on a warm store, always correct, install scripts run every time.
 
@@ -49,9 +49,20 @@ runs:
           corepack prepare "pnpm@$PNPM_VERSION" --activate
         fi
 
+    # ---------- Self-hosted only ----------
+    # pnpm adopts its default store only when it can hard-link from the checkout into
+    # pnpm home; on ARC `_work` is a separate mount, so without an explicit store-dir
+    # it falls back to an ephemeral store on that mount. Point at the store root —
+    # pnpm appends its own version dir.
+    - if: runner.environment == 'self-hosted'
+      name: Point pnpm at the host store
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: pnpm config set store-dir "$HOME/.local/share/pnpm/store" --location=global
+
     # ---------- GitHub-hosted only ----------
     # No host-mounted volume here, so the store comes from actions/cache. Self-hosted
-    # skips this: the store is a btc-runway host volume at pnpm's default path, warm
+    # skips this: the store is a btc-runway host volume (store-dir set above), warm
     # across ephemeral pods — the same arrangement setup-node has with ~/.npm. It is
     # the STORE (immutable content-addressable packages), not node_modules — `pnpm
     # install` runs every job, so install scripts always execute and there is no partial
