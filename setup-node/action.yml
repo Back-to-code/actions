@@ -10,11 +10,11 @@ inputs:
   node-version:
     description: >
       Node.js version. On ARC this must match the runner image or tool-cache. On
-      GitHub-hosted runners an exact patch pin (e.g. 22.20.0) that is absent from the image
+      GitHub-hosted runners an exact patch pin (e.g. 22.23.4) that is absent from the image
       tool-cache costs a download on every job — a major-only value like '22' resolves to the
       preinstalled build and costs nothing.
     required: false
-    default: '22.20.0'
+    default: '22.23.4'
   working-directory:
     description: Directory containing package-lock.json
     required: false

@@ -15,7 +15,7 @@ inputs:
       absent from it costs a download on every job; a major-only value like '24' resolves
       to the preinstalled build and costs nothing.
     required: false
-    default: '24.16.0'
+    default: '24.22.1'
   pnpm-version:
     description: >
       pnpm version, for a repo without a package.json "packageManager" field. Ignored

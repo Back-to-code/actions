@@ -34,7 +34,7 @@ Installs Node.js, runs `npm ci` against the host-mounted `~/.npm` download cache
 
 | Input | Default | Description |
 |-------|---------|-------------|
-| `node-version` | `22.20.0` | Node.js version |
+| `node-version` | `22.23.4` | Node.js version |
 | `working-directory` | `.` | Directory with `package-lock.json` |
 
 On a GitHub-hosted fallback runner the download cache comes from `actions/cache` instead of the host volume — see [Runner fallback](#runner-fallback). Note that an exact patch pin absent from that image's tool-cache costs a download on every job; a major-only value like `'22'` resolves to the preinstalled build and costs nothing.
@@ -56,7 +56,7 @@ Installs Node.js, enables pnpm via corepack, runs `pnpm install --frozen-lockfil
 
 | Input | Default | Description |
 |-------|---------|-------------|
-| `node-version` | `24.16.0` | Node.js version (same ARC tool-cache note as setup-node) |
+| `node-version` | `24.22.1` | Node.js version (same ARC tool-cache note as setup-node) |
 | `pnpm-version` | `''` | pnpm version, for repos without a `package.json` `"packageManager"` field. Ignored when that field is present — the project pin always wins |
 | `working-directory` | `.` | Directory with `package.json` + `pnpm-lock.yaml` |
 
