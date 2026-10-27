@@ -1,0 +1,89 @@
+name: Runner-loss retry
+description: >
+  Re-run the failed jobs of a completed CI run when every failure is a lost
+  self-hosted runner (server-written "lost communication", or a timeout the
+  runner never finalised) or a failed action download, and at least one is a
+  runner loss. Any other failure holds the run red for a person. Drive it from a
+  workflow_run caller that names the gate workflow only. It never checks out
+  code and needs actions: write, checks: read, contents: read.
+
+inputs:
+  max-reruns:
+    description: Re-run attempts allowed per run (2 means at most 3 attempts).
+    default: '2'
+  rollup-jobs:
+    description: Comma-separated gate job names left out of the decision.
+    default: 'ci-passed,CI Passed,CI Gate'
+  dry-run:
+    description: Classify and write the summary, never re-run.
+    default: 'false'
+  run-id:
+    description: Judge this run id instead of the workflow_run event (for workflow_dispatch). With dry-run, the freshness gates report instead of skipping.
+    default: ''
+  github-token:
+    description: Token with actions write on this repository.
+    default: ${{ github.token }}
+
+outputs:
+  decision:
+    description: rerun, hold or skip.
+    value: ${{ steps.judge.outputs.decision }}
+
+runs:
+  using: composite
+  steps:
+    - id: judge
+      uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+      env:
+        # GITHUB_ACTION_PATH is documented for a composite's own `run:` steps; this
+        # is a `uses:` step, so the composite's path is passed in explicitly.
+        RLR_ACTION_PATH: ${{ github.action_path }}
+        RLR_MAX_RERUNS: ${{ inputs.max-reruns }}
+        RLR_ROLLUP_JOBS: ${{ inputs.rollup-jobs }}
+        RLR_DRY_RUN: ${{ inputs.dry-run }}
+        RLR_RUN_ID: ${{ inputs.run-id }}
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const path = require('path');
+          const {evaluate, rerunFailedJobs} = require(path.join(process.env.RLR_ACTION_PATH, 'evaluate.js'));
+          const {owner, repo} = context.repo;
+          const dryRun = process.env.RLR_DRY_RUN === 'true';
+          const event = context.payload.workflow_run;
+          const runId = process.env.RLR_RUN_ID || event?.id;
+          if (!runId) {
+            core.setFailed('No workflow_run in the event payload and no run-id input.');
+            return;
+          }
+          const {run, notes, decision} = await evaluate(github, {
+            owner,
+            repo,
+            runId,
+            attempt: process.env.RLR_RUN_ID ? undefined : event.run_attempt,
+            maxReruns: process.env.RLR_MAX_RERUNS,
+            rollupJobs: process.env.RLR_ROLLUP_JOBS,
+            replay: Boolean(process.env.RLR_RUN_ID) && dryRun,
+          });
+
+          let acted = decision.action;
+          if (decision.action === 'rerun') {
+            if (dryRun) acted = 'rerun (dry-run, not sent)';
+            else await rerunFailedJobs(github, owner, repo, run.id);
+          }
+          core.setOutput('decision', decision.action);
+          core.notice(`Run ${run.id} attempt ${run.attempt}: ${acted}: ${decision.reason}`);
+
+          const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          const rows = decision.jobs
+            .filter((j) => j.class !== 'NOT_JUDGED')
+            .map((j) => [esc(j.name), j.class, esc(j.runner || '-'), acted, esc(decision.reason)]);
+          if (rows.length === 0) rows.push(['-', '-', '-', acted, esc(decision.reason)]);
+          await core.summary
+            .addHeading('Runner-loss retry', 3)
+            .addRaw(`<a href="${run.url}">${esc(run.name)} run ${run.id}</a>, attempt ${run.attempt} (${run.event})`, true)
+            .addList(notes.length > 0 ? notes.map(esc) : ['fresh run, no gate notes'])
+            .addTable([
+              ['Job', 'Class', 'Runner', 'Decision', 'Reason'].map((data) => ({data, header: true})),
+              ...rows,
+            ])
+            .write();
