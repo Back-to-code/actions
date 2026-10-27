@@ -175,6 +175,86 @@ is fixed to `Codeowner gate` to match the org `protect-internal` ruleset's
 required check. Owner matching is global (any `@login` in CODEOWNERS), not
 path-scoped.
 
+### runner-loss-retry
+
+Re-runs the failed jobs of a completed CI run when the failure was the runner, not the code. A
+self-hosted runner that drops a job already turns the required check red; this action replaces the
+person who would otherwise press "Re-run failed jobs".
+
+**The rule.** Each non-success job of the attempt is classified. The named rollup jobs and
+consequential cancels (a matrix fail-fast, or a run-level cancel: cancelled with no steps and no
+annotations) are left out.
+
+| Class | Signature |
+|---|---|
+| `RUNNER_LOST` | the server-written "self-hosted runner lost communication with the server" annotation (`failure`, path `.github`, line 1) |
+| `TIMEOUT_NOSTEPS` | the server-written timeout annotation and no steps recorded |
+| `TIMEOUT_STUCK` | the timeout annotation and a step still `in_progress` with no `completed_at` |
+| `TIMEOUT_SETUP` | the timeout annotation and `Set up job` / `Initialize containers` not `success` |
+| `INFRA_SETUP` | `Set up job` **failed** on an action-download error (codeload, "resolve action download info") |
+| `OTHER` | everything else, including a timeout on a live runner and the same sentence echoed through `::error::` (that lands on its own log line, never line 1) |
+
+It re-runs **only if at least one job is one of the four runner classes and every other judged job is a
+runner class or `INFRA_SETUP`.** One `OTHER` anywhere holds the run red for a person, because
+`rerun-failed-jobs` would re-run the real failure too. A job that was runner-class on the previous
+attempt as well holds: it lost its runner twice, so suspect the job (OOM, a kill), not the pool.
+
+It skips a run past `max-reruns`, an attempt that is not the latest, a run whose head moved (a newer
+run on the PR branch, or a moved push branch: the newer run is the verdict), and `schedule` and
+`merge_group` runs. Every run writes a job summary: job, class, runner, decision, reason.
+
+```yaml
+name: Runner-loss retry
+on:
+  workflow_run:
+    workflows: [CI]          # the gate workflow ONLY
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run-id: {description: Run to judge, required: true}
+      dry-run: {description: Classify only, default: 'true'}
+permissions: {actions: write, checks: read, contents: read}
+jobs:
+  retry:
+    if: github.event_name == 'workflow_dispatch' || contains(fromJSON('["failure","cancelled"]'), github.event.workflow_run.conclusion)
+    runs-on: ubuntu-latest   # off the pool it is judging
+    timeout-minutes: 3
+    steps:
+      - uses: Back-to-code/actions/runner-loss-retry@<sha> # v2
+        with:
+          rollup-jobs: ci-passed
+          run-id: ${{ inputs.run-id }}
+          dry-run: ${{ inputs.dry-run || 'false' }}
+```
+
+> **Never list a deploy workflow under `workflows:`.** A re-run replays the run's original SHA, so
+> re-running a deploy can roll production back to an older commit.
+
+The caller must live on the default branch: `workflow_run` fires only from there. It never checks
+out code, which is what keeps a `workflow_run` job (it holds a write token even for fork PRs) safe.
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `max-reruns` | `2` | Re-runs per run; 2 means at most 3 attempts |
+| `rollup-jobs` | `ci-passed,CI Passed,CI Gate` | Gate jobs left out of the decision |
+| `dry-run` | `false` | Classify and summarise, never re-run |
+| `run-id` | — | Judge this run instead of the event (`workflow_dispatch`); with `dry-run` the freshness gates report instead of skipping, so a past run can be replayed |
+| `github-token` | `${{ github.token }}` | Needs `actions: write` |
+
+`node runner-loss-retry/cli.js <owner/repo> <run_id> [attempt]` classifies one attempt through the
+same code path with your `gh auth token` and prints the decision. It never re-runs anything.
+
+**Residuals.**
+- **Possibly one effective re-run.** Events caused by `GITHUB_TOKEN` do not start new workflow runs.
+  Whether a re-run this action starts fires `workflow_run` again on completion is unmeasured; if it
+  does not, `max-reruns: 2` behaves as 1. An org GitHub App token would guarantee the second round.
+- **A job that kills its own runner** (memory past the pod limit) looks exactly like an infra loss
+  for one attempt. The same-job-twice hold bounds it to one wasted re-run.
+- **Pool starvation stays pending.** A job waiting for a runner is not red, so nothing triggers
+  this action; `timeout-minutes` does not count queue time.
+- Workload timeouts on a live runner and docker exit 125 are never retried, on purpose: a
+  deadlocked test and a starved runner look the same there.
+
 ---
 
 ## Runner fallback
