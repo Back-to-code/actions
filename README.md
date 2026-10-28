@@ -157,12 +157,13 @@ permissions:
   contents: read
   pull-requests: read
   statuses: write
-concurrency:
-  group: codeowner-gate-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
 jobs:
   codeowner-gate:
     name: Evaluate codeowner gate
+    if: github.event_name == 'pull_request_target' || github.event.review.state != 'commented'
+    concurrency:
+      group: codeowner-gate-${{ github.event.pull_request.number }}-${{ github.event_name }}
+      cancel-in-progress: true
     runs-on: self-hosted-kata
     timeout-minutes: 5
     steps:
@@ -174,6 +175,10 @@ trusted workflow + action with a writable token. No inputs — the status contex
 is fixed to `Codeowner gate` to match the org `protect-internal` ruleset's
 required check. Owner matching is global (any `@login` in CODEOWNERS), not
 path-scoped.
+
+Concurrency is set on the job, keyed per event, so a review run can never cancel the
+`pull_request_target` run (its check would stay cancelled); `if:` skips COMMENTED
+reviews, which cannot change the verdict, so a skipped run never joins the group.
 
 ---
 
